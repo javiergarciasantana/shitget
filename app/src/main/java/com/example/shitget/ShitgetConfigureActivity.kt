@@ -8,14 +8,13 @@ import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.View
-import android.view.ViewGroup
 import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updateLayoutParams
 import org.json.JSONArray
 import java.io.File
 import java.io.FileOutputStream
@@ -29,9 +28,12 @@ class ShitgetConfigureActivity : ComponentActivity() {
 
     private lateinit var spinnerNames: Spinner
     private lateinit var spinnerFont: Spinner
+    private lateinit var spinnerWeight: Spinner
+    private lateinit var seekSize: SeekBar
     private lateinit var seekRed: SeekBar
     private lateinit var seekGreen: SeekBar
     private lateinit var seekBlue: SeekBar
+
     private lateinit var previewBg: ImageView
     private lateinit var previewNumber: TextView
     private lateinit var previewMinus: TextView
@@ -40,17 +42,11 @@ class ShitgetConfigureActivity : ComponentActivity() {
     private var selectedImageUri: Uri? = null
     private val scriptUrl = "https://script.google.com/macros/s/AKfycbxkrheg1lCyjKL4PAmMVQndIpmQnqaepYBJc6Io79PXoBGyY-xPg9O2oRvrI3scVXtwlw/exec"
 
-    // --- SOLUCIÓN PUNTO 4: MÁS FUENTES DEL SISTEMA ---
-    private val fontNames = arrayOf(
-        "Default", "Sans-Serif", "Serif", "Monospace",
-        "Condensed", "Light", "Thin", "Medium", "Black",
-        "Casual", "Cursive", "Serif-Monospace"
-    )
-    private val fontFamilies = arrayOf(
-        "sans-serif", "sans-serif", "serif", "monospace",
-        "sans-serif-condensed", "sans-serif-light", "sans-serif-thin", "sans-serif-medium", "sans-serif-black",
-        "casual", "cursive", "serif-monospace"
-    )
+    private val fontNames = arrayOf("Default", "Sans-Serif", "Serif", "Monospace", "Condensed", "Light", "Thin", "Medium", "Black", "Casual", "Cursive", "Serif-Monospace")
+    private val fontFamilies = arrayOf("sans-serif", "sans-serif", "serif", "monospace", "sans-serif-condensed", "sans-serif-light", "sans-serif-thin", "sans-serif-medium", "sans-serif-black", "casual", "cursive", "serif-monospace")
+
+    private val weightNames = arrayOf("Normal", "Negrita (Bold)", "Cursiva (Italic)", "Negrita Cursiva")
+    private val weightStyles = arrayOf(Typeface.NORMAL, Typeface.BOLD, Typeface.ITALIC, Typeface.BOLD_ITALIC)
 
     private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
@@ -61,20 +57,13 @@ class ShitgetConfigureActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Habilitar diseño de borde a borde (Edge-to-Edge) para gestionar la cámara
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(false)
-        }
-
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) { window.setDecorFitsSystemWindows(false) }
         setContentView(R.layout.activity_configure)
         setResult(Activity.RESULT_CANCELED)
 
-        // --- SOLUCIÓN PUNTO 1: PADDING SUPERIOR PARA CÁMARA ---
         val rootLayout = findViewById<View>(R.id.configRootScroll)
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, windowInsets ->
             val insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            // Aplicamos padding superior e inferior según las barras del sistema y recortes
             view.setPadding(view.paddingLeft, insets.top, view.paddingRight, insets.bottom)
             windowInsets
         }
@@ -82,9 +71,10 @@ class ShitgetConfigureActivity : ComponentActivity() {
         appWidgetId = intent?.extras?.getInt(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID) ?: AppWidgetManager.INVALID_APPWIDGET_ID
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) { finish(); return }
 
-        // Vincular UI
         spinnerNames = findViewById(R.id.spinnerNames)
         spinnerFont = findViewById(R.id.spinnerFont)
+        spinnerWeight = findViewById(R.id.spinnerWeight)
+        seekSize = findViewById(R.id.seekSize)
         seekRed = findViewById(R.id.seekRed)
         seekGreen = findViewById(R.id.seekGreen)
         seekBlue = findViewById(R.id.seekBlue)
@@ -95,49 +85,63 @@ class ShitgetConfigureActivity : ComponentActivity() {
 
         setupControls()
         fetchNamesFromGoogle()
-
-        // --- SOLUCIÓN PUNTO 3: INICIALIZAR COLOR DE PREVIEW ---
-        updatePreviewColor()
+        updatePreviewStyles()
 
         findViewById<Button>(R.id.btnPickImage).setOnClickListener { pickImageLauncher.launch("image/*") }
         findViewById<Button>(R.id.btnSave).setOnClickListener { saveWidgetConfig() }
     }
 
     private fun setupControls() {
-        // --- FUENTES ---
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, fontNames)
-        spinnerFont.adapter = adapter
+        // Fuentes
+        spinnerFont.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, fontNames)
         spinnerFont.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p0: AdapterView<*>?, p1: View?, position: Int, p3: Long) {
-                // Creamos la fuente basada en el nombre de familia
-                val typeface = Typeface.create(fontFamilies[position], Typeface.NORMAL)
-                previewNumber.typeface = typeface
-                previewMinus.typeface = typeface
-                previewPlus.typeface = typeface
-            }
+            override fun onItemSelected(p0: AdapterView<*>?, p1: View?, p2: Int, p3: Long) { updatePreviewStyles() }
             override fun onNothingSelected(p0: AdapterView<*>?) {}
         }
 
-        // --- RGB SEEKBARS ---
-        val colorChangeListener = object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                // --- SOLUCIÓN PUNTO 3: ACTUALIZACIÓN EN TIEMPO REAL ---
-                updatePreviewColor()
-            }
+        // Estilos/Pesos
+        spinnerWeight.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, weightNames)
+        spinnerWeight.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p0: AdapterView<*>?, p1: View?, p2: Int, p3: Long) { updatePreviewStyles() }
+            override fun onNothingSelected(p0: AdapterView<*>?) {}
+        }
+
+        // Listener global para Seekbars (Color y Tamaño)
+        val changeListener = object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { updatePreviewStyles() }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         }
-        seekRed.setOnSeekBarChangeListener(colorChangeListener)
-        seekGreen.setOnSeekBarChangeListener(colorChangeListener)
-        seekBlue.setOnSeekBarChangeListener(colorChangeListener)
+        seekSize.setOnSeekBarChangeListener(changeListener)
+        seekRed.setOnSeekBarChangeListener(changeListener)
+        seekGreen.setOnSeekBarChangeListener(changeListener)
+        seekBlue.setOnSeekBarChangeListener(changeListener)
     }
 
-    private fun updatePreviewColor() {
-        // Obtenemos color de los seekbars y lo aplicamos a los 3 textos de preview
+    private fun updatePreviewStyles() {
+        // Aplicar Color
         val color = Color.rgb(seekRed.progress, seekGreen.progress, seekBlue.progress)
         previewNumber.setTextColor(color)
         previewMinus.setTextColor(color)
         previewPlus.setTextColor(color)
+
+        // Aplicar Fuente y Peso
+        val fontFamily = fontFamilies[spinnerFont.selectedItemPosition]
+        val textStyle = weightStyles[spinnerWeight.selectedItemPosition]
+        val typeface = Typeface.create(fontFamily, textStyle)
+
+        previewNumber.typeface = typeface
+        previewMinus.typeface = typeface
+        previewPlus.typeface = typeface
+
+        // Aplicar Tamaño (Offset de +20 para que el mínimo sea 20sp, y max 100sp)
+        val sizeSp = (seekSize.progress + 20).toFloat()
+        previewNumber.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
+
+        // Hacemos que los botones + y - sean un poco más pequeños que el número central
+        val buttonsSp = (sizeSp - 8).coerceAtLeast(20f)
+        previewMinus.setTextSize(TypedValue.COMPLEX_UNIT_SP, buttonsSp)
+        previewPlus.setTextSize(TypedValue.COMPLEX_UNIT_SP, buttonsSp)
     }
 
     private fun fetchNamesFromGoogle() {
@@ -150,37 +154,25 @@ class ShitgetConfigureActivity : ComponentActivity() {
                 if (response.startsWith("[")) {
                     val jsonArray = JSONArray(response)
                     val namesList = (0 until jsonArray.length()).map { jsonArray.getString(it) }
-
-                    runOnUiThread {
-                        val adapter = ArrayAdapter(this@ShitgetConfigureActivity, android.R.layout.simple_spinner_dropdown_item, namesList)
-                        spinnerNames.adapter = adapter
-                    }
+                    runOnUiThread { spinnerNames.adapter = ArrayAdapter(this@ShitgetConfigureActivity, android.R.layout.simple_spinner_dropdown_item, namesList) }
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (e: Exception) { e.printStackTrace() }
         }
     }
 
     private fun saveWidgetConfig() {
-        // VALIDACIÓN: Campo obligatorio
         if (spinnerNames.selectedItem == null) {
-            Toast.makeText(this, "Por favor, selecciona un nombre", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Espera a cargar nombres", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val selectedName = spinnerNames.selectedItem.toString()
-        // Guardamos el color como un Integer directo
-        val selectedColorInt = Color.rgb(seekRed.progress, seekGreen.progress, seekBlue.progress)
-        val selectedFontFamily = fontFamilies[spinnerFont.selectedItemPosition]
-
-        // Guardar preferencias blindadas (sin forzar temas)
         val prefs = getSharedPreferences("ShitgetPrefs", 0).edit()
-        prefs.putString("widget_name_$appWidgetId", selectedName)
-        prefs.putInt("widget_color_$appWidgetId", selectedColorInt)
-        prefs.putString("widget_font_$appWidgetId", selectedFontFamily)
+        prefs.putString("widget_name_$appWidgetId", spinnerNames.selectedItem.toString())
+        prefs.putInt("widget_color_$appWidgetId", Color.rgb(seekRed.progress, seekGreen.progress, seekBlue.progress))
+        prefs.putString("widget_font_$appWidgetId", fontFamilies[spinnerFont.selectedItemPosition])
+        prefs.putInt("widget_weight_$appWidgetId", weightStyles[spinnerWeight.selectedItemPosition])
+        prefs.putInt("widget_size_$appWidgetId", seekSize.progress + 20) // Guardamos el tamaño final en SP
 
-        // Guardar foto de fondo
         selectedImageUri?.let { uri ->
             try {
                 val inputStream = contentResolver.openInputStream(uri)
@@ -194,7 +186,6 @@ class ShitgetConfigureActivity : ComponentActivity() {
 
         prefs.apply()
 
-        // Forzar actualización del widget real
         val appWidgetManager = AppWidgetManager.getInstance(this)
         updateAppWidget(this, appWidgetManager, appWidgetId)
 
