@@ -64,27 +64,46 @@ internal fun updateAppWidget(context: Context, appWidgetManager: AppWidgetManage
 
     val views = RemoteViews(context.packageName, R.layout.shitget)
 
-    // --- APLICAR ESTILOS GUARDADOS ---
-    val savedColor = prefs.getInt("widget_color_$appWidgetId", android.graphics.Color.BLACK)
-    val savedFont = prefs.getString("widget_font_$appWidgetId", "sans-serif")
+    // --- APLICAR ESTILOS GUARDADOS (SOPORTE AVANZADO) ---
+    // Usamos negro por defecto si no hay color guardado
+    val savedColorInt = prefs.getInt("widget_color_$appWidgetId", android.graphics.Color.BLACK)
+    // Usamos sans-serif por defecto
+    val savedFontFamily = prefs.getString("widget_font_$appWidgetId", "sans-serif") ?: "sans-serif"
 
-    views.setTextColor(R.id.button_plus, savedColor)
-    views.setTextColor(R.id.button_minus, savedColor)
+    // 1. Aplicar color directo a los botones
+    views.setTextColor(R.id.button_plus, savedColorInt)
+    views.setTextColor(R.id.button_minus, savedColorInt)
 
-    // Para cambiar la fuente del número junto con el color
-    val spannableString = android.text.SpannableString("...") // Luego cuando hagas la petición, le pasas el número real aquí
-    spannableString.setSpan(android.text.style.TypefaceSpan(savedFont!!), 0, spannableString.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-    spannableString.setSpan(android.text.style.ForegroundColorSpan(savedColor), 0, spannableString.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    // 2. Aplicar fuente y color combinados al número central usando Spans
+    // (Asegúrate de pasar el valor real de Google aquí en lugar de "...")
+    val spannableString = android.text.SpannableString("...")
+
+    // Aplicar la familia de fuente del sistema
+    spannableString.setSpan(
+        android.text.style.TypefaceSpan(savedFontFamily),
+        0, spannableString.length,
+        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+    )
+
+    // Aplicar el color elegido
+    spannableString.setSpan(
+        android.text.style.ForegroundColorSpan(savedColorInt),
+        0, spannableString.length,
+        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+    )
+
     views.setTextViewText(R.id.appwidget_text, spannableString)
 
-    // Cargar imagen de fondo si existe
+    // 3. Cargar imagen de fondo
     val bgFile = java.io.File(context.filesDir, "bg_$appWidgetId.jpg")
     if (bgFile.exists()) {
         val bitmap = android.graphics.BitmapFactory.decodeFile(bgFile.absolutePath)
         views.setImageViewBitmap(R.id.widget_bg_image, bitmap)
     } else {
+        // Fondo blanco si no hay foto para asegurar visibilidad de textos negros
         views.setImageViewResource(R.id.widget_bg_image, android.R.color.white)
     }
+
     // 1. Estado inicial de carga
     views.setTextViewText(R.id.appwidget_text, "...")
 

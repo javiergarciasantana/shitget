@@ -6,11 +6,16 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
 import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updateLayoutParams
 import org.json.JSONArray
 import java.io.File
 import java.io.FileOutputStream
@@ -35,9 +40,17 @@ class ShitgetConfigureActivity : ComponentActivity() {
     private var selectedImageUri: Uri? = null
     private val scriptUrl = "https://script.google.com/macros/s/AKfycbxkrheg1lCyjKL4PAmMVQndIpmQnqaepYBJc6Io79PXoBGyY-xPg9O2oRvrI3scVXtwlw/exec"
 
-    // Los nombres oficiales de las familias de fuentes en Android
-    private val fontNames = arrayOf("Normal", "Serif", "Monospace", "Sans-Serif Light", "Sans-Serif Condensed", "Cursive", "Casual")
-    private val fontFamilies = arrayOf("sans-serif", "serif", "monospace", "sans-serif-light", "sans-serif-condensed", "cursive", "casual")
+    // --- SOLUCIÓN PUNTO 4: MÁS FUENTES DEL SISTEMA ---
+    private val fontNames = arrayOf(
+        "Default", "Sans-Serif", "Serif", "Monospace",
+        "Condensed", "Light", "Thin", "Medium", "Black",
+        "Casual", "Cursive", "Serif-Monospace"
+    )
+    private val fontFamilies = arrayOf(
+        "sans-serif", "sans-serif", "serif", "monospace",
+        "sans-serif-condensed", "sans-serif-light", "sans-serif-thin", "sans-serif-medium", "sans-serif-black",
+        "casual", "cursive", "serif-monospace"
+    )
 
     private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
@@ -48,8 +61,23 @@ class ShitgetConfigureActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Habilitar diseño de borde a borde (Edge-to-Edge) para gestionar la cámara
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+        }
+
         setContentView(R.layout.activity_configure)
         setResult(Activity.RESULT_CANCELED)
+
+        // --- SOLUCIÓN PUNTO 1: PADDING SUPERIOR PARA CÁMARA ---
+        val rootLayout = findViewById<View>(R.id.configRootScroll)
+        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, windowInsets ->
+            val insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            // Aplicamos padding superior e inferior según las barras del sistema y recortes
+            view.setPadding(view.paddingLeft, insets.top, view.paddingRight, insets.bottom)
+            windowInsets
+        }
 
         appWidgetId = intent?.extras?.getInt(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID) ?: AppWidgetManager.INVALID_APPWIDGET_ID
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) { finish(); return }
@@ -68,15 +96,20 @@ class ShitgetConfigureActivity : ComponentActivity() {
         setupControls()
         fetchNamesFromGoogle()
 
+        // --- SOLUCIÓN PUNTO 3: INICIALIZAR COLOR DE PREVIEW ---
+        updatePreviewColor()
+
         findViewById<Button>(R.id.btnPickImage).setOnClickListener { pickImageLauncher.launch("image/*") }
         findViewById<Button>(R.id.btnSave).setOnClickListener { saveWidgetConfig() }
     }
 
     private fun setupControls() {
         // --- FUENTES ---
-        spinnerFont.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, fontNames)
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, fontNames)
+        spinnerFont.adapter = adapter
         spinnerFont.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p0: AdapterView<*>?, p1: View?, position: Int, p3: Long) {
+                // Creamos la fuente basada en el nombre de familia
                 val typeface = Typeface.create(fontFamilies[position], Typeface.NORMAL)
                 previewNumber.typeface = typeface
                 previewMinus.typeface = typeface
@@ -87,7 +120,10 @@ class ShitgetConfigureActivity : ComponentActivity() {
 
         // --- RGB SEEKBARS ---
         val colorChangeListener = object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { updatePreviewColor() }
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                // --- SOLUCIÓN PUNTO 3: ACTUALIZACIÓN EN TIEMPO REAL ---
+                updatePreviewColor()
+            }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         }
@@ -97,6 +133,7 @@ class ShitgetConfigureActivity : ComponentActivity() {
     }
 
     private fun updatePreviewColor() {
+        // Obtenemos color de los seekbars y lo aplicamos a los 3 textos de preview
         val color = Color.rgb(seekRed.progress, seekGreen.progress, seekBlue.progress)
         previewNumber.setTextColor(color)
         previewMinus.setTextColor(color)
@@ -107,12 +144,17 @@ class ShitgetConfigureActivity : ComponentActivity() {
         thread {
             try {
                 val connection = URL(scriptUrl).openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
-                val jsonArray = JSONArray(response)
-                val namesList = (0 until jsonArray.length()).map { jsonArray.getString(it) }
 
-                runOnUiThread {
-                    spinnerNames.adapter = ArrayAdapter(this@ShitgetConfigureActivity, android.R.layout.simple_spinner_dropdown_item, namesList)
+                if (response.startsWith("[")) {
+                    val jsonArray = JSONArray(response)
+                    val namesList = (0 until jsonArray.length()).map { jsonArray.getString(it) }
+
+                    runOnUiThread {
+                        val adapter = ArrayAdapter(this@ShitgetConfigureActivity, android.R.layout.simple_spinner_dropdown_item, namesList)
+                        spinnerNames.adapter = adapter
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -123,20 +165,22 @@ class ShitgetConfigureActivity : ComponentActivity() {
     private fun saveWidgetConfig() {
         // VALIDACIÓN: Campo obligatorio
         if (spinnerNames.selectedItem == null) {
-            Toast.makeText(this, "Por favor, espera a que carguen los nombres", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Por favor, selecciona un nombre", Toast.LENGTH_SHORT).show()
             return
         }
 
         val selectedName = spinnerNames.selectedItem.toString()
-        val selectedColor = Color.rgb(seekRed.progress, seekGreen.progress, seekBlue.progress)
+        // Guardamos el color como un Integer directo
+        val selectedColorInt = Color.rgb(seekRed.progress, seekGreen.progress, seekBlue.progress)
         val selectedFontFamily = fontFamilies[spinnerFont.selectedItemPosition]
 
+        // Guardar preferencias blindadas (sin forzar temas)
         val prefs = getSharedPreferences("ShitgetPrefs", 0).edit()
         prefs.putString("widget_name_$appWidgetId", selectedName)
-        prefs.putInt("widget_color_$appWidgetId", selectedColor)
+        prefs.putInt("widget_color_$appWidgetId", selectedColorInt)
         prefs.putString("widget_font_$appWidgetId", selectedFontFamily)
 
-        // Guardar foto
+        // Guardar foto de fondo
         selectedImageUri?.let { uri ->
             try {
                 val inputStream = contentResolver.openInputStream(uri)
@@ -150,6 +194,7 @@ class ShitgetConfigureActivity : ComponentActivity() {
 
         prefs.apply()
 
+        // Forzar actualización del widget real
         val appWidgetManager = AppWidgetManager.getInstance(this)
         updateAppWidget(this, appWidgetManager, appWidgetId)
 
